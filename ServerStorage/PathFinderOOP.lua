@@ -3,7 +3,7 @@ PathFinder.__index = PathFinder
 
 local PathfindingService = game:GetService("PathfindingService")
 
-function PathFinder.new(person,humanoid,destination, isRandom, isFighter, isGunner)
+function PathFinder.new(person, humanoid, isRandom, isFighter, isGunner)
   local newPathFinder = {}
   setmetatable(newPathFinder, PathFinder)
 
@@ -11,7 +11,6 @@ function PathFinder.new(person,humanoid,destination, isRandom, isFighter, isGunn
   newPathFinder.humanoid = humanoid
   newPathFinder.personRoot = person.HumanoidRootPart
 
-  newPathFinder.destination = destination
   newPathFinder.waypoints = {}
   newPathFinder.currentWaypointIndex = 0
 
@@ -22,6 +21,13 @@ function PathFinder.new(person,humanoid,destination, isRandom, isFighter, isGunn
 
   newPathFinder.PathBlockedEvent = nil
   newPathFinder.PathWaypointReached = nil
+
+  --Custom events
+  newPathFinder.onPathComplete = Instance.new("BindableEvent")
+
+  --Temp
+  newPathFinder.position = nil
+  newPathFinder.isRunning = false
 
   --Settings config
   newPathFinder.debug = true
@@ -84,16 +90,20 @@ function PathFinder.walkRandomly(self)
   end
 end
 
-function PathFinder.followPath(self)
+function PathFinder.followPath(self, position)
+  self.isRunning = true
+  self.position = position
+
   self.waypoints = {}
   self.currentWaypointIndex = 0
-  self.path:ComputeAsync(self.personRoot.Position, self.destination.Position)
+  self.path:ComputeAsync(self.personRoot.Position, position)
   wait(0.5)
   self.waypoints = self.path:GetWaypoints()
 
-  local tDis
+  local stuck = 0
   if self.path.Status == Enum.PathStatus.Success then
     for _, waypoint in ipairs(self.waypoints) do
+      stuck = 0
 
       if self.debug then
         local part = Instance.new("Part")
@@ -108,46 +118,30 @@ function PathFinder.followPath(self)
 
       --Jump
       if waypoint.Action == Enum.PathWaypointAction.Jump then
-        self.humanoid.Jump = true
+        self.humanoid:ChangeState(Enum.HumanoidStateType.Jumping)
       end
 
       self.currentWaypointIndex = self.currentWaypointIndex + 1
       self.humanoid:MoveTo(waypoint.Position)
 
-      --https://devforum.roblox.com/t/pathfinding-npc-seems-to-be-hopping/120893/7
+      local done = false
+      local event = self.humanoid.MoveToFinished:Connect(function(isDone)
+      done = isDone
+      end)
+
+      --https://scriptinghelpers.org/questions/26996/using-an-event-for-a-repeat-until
       repeat
-        tDis = (waypoint.Position - self.personRoot.Position).magnitude
+        stuck = stuck + 1
+        if stuck == 30 then
+          print("Got stuck {FIXING}")
+          break
+        end
         wait()
-      until
-      tDis <= 5
+      until done == true
+      event:Disconnect()
     end --End of for()
   else
     self.humanoid:MoveTo(self.personRoot.Position)
-  end
-end
-
---Runs every time it goes to a waypoint.
-function PathFinder.onWaypointReached(self,reached)
-  if reached and self.currentWaypointIndex >= #self.waypoints and self.isRandom == true then
-    wait(0.5)
-    print("Recaculating the path.>>>>")
-    self:walkRandomly()
-  elseif reached and self.currentWaypointIndex >= #self.waypoints and self.isRandom == false then
-    print("Path is now done.")
-  end
-
-end
-
---Runs when path was blocked.
-function PathFinder.onPathBlocked(self,index)
-  print("onPathBlocked has been ran........")
-  if self.isRandom == true then
-    wait(0.5)
-    self:walkRandomly()
-  else
-    if index > self.currentWaypointIndex then
-      self:followPath()
-    end
   end
 end
 
@@ -204,6 +198,34 @@ function PathFinder.findTarget(self)
   return target
 end
 
+--Runs every time it goes to a waypoint.
+function PathFinder.onWaypointReached(self,reached)
+  if reached and self.currentWaypointIndex >= #self.waypoints and self.isRandom == true then
+    wait(0.5)
+    print("Recaculating the path.>>>>")
+    self:walkRandomly()
+  elseif reached and self.currentWaypointIndex >= #self.waypoints and self.isRandom == false then
+    self.isRunning = false
+    self.onPathComplete:Fire(self, self.position)
+    self.position = nil
+    print("Path is now done.")
+  end
+
+end
+
+--Runs when path was blocked.
+function PathFinder.onPathBlocked(self,index)
+  print("onPathBlocked has been ran........")
+  if self.isRandom == true then
+    wait(0.5)
+    self:walkRandomly()
+  else
+    if index > self.currentWaypointIndex then
+      self:followPath()
+    end
+  end
+end
+
 function PathFinder.setUpEvents(self)
   self.PathBlockedEvent = self.path.Blocked:Connect(function(index)
   self.onPathBlocked(self,index)
@@ -211,16 +233,6 @@ function PathFinder.setUpEvents(self)
   self.PathWaypointReached = self.humanoid.MoveToFinished:Connect(function(index)
   self.onWaypointReached(self,index)
   end)
-end
-
-function PathFinder.main(self)
-  self:setUpEvents()
-
-  if self.isRandom == true then
-    self:walkRandomly()
-  elseif self.isRandom == false then
-    self:followPath()
-  end
 end
 
 return PathFinder
