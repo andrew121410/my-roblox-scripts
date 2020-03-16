@@ -3,13 +3,13 @@ PathFinder.__index = PathFinder
 
 local PathfindingService = game:GetService("PathfindingService")
 
-function PathFinder.new(person, humanoid, isRandom, isFighter, isGunner)
+function PathFinder.new(person, isRandom, isFighter, isGunner)
   local newPathFinder = {}
   setmetatable(newPathFinder, PathFinder)
 
   newPathFinder.person = person
-  newPathFinder.humanoid = humanoid
-  newPathFinder.personRoot = person.HumanoidRootPart
+  newPathFinder.humanoid = person:WaitForChild("Humanoid")
+  newPathFinder.personRoot = person:WaitForChild("HumanoidRootPart")
 
   newPathFinder.waypoints = {}
   newPathFinder.currentWaypointIndex = 0
